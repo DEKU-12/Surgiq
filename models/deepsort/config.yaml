@@ -1,0 +1,29 @@
+# SurgIQ — DeepSORT Tracker Configuration
+# Used by pipeline/instrument_tracker.py
+
+# Maximum number of frames to keep a "lost" track alive before deleting it.
+# Higher = more tolerant of occlusion; lower = fewer ghost tracks.
+max_age: 30
+
+# Minimum number of consecutive detections before a track is confirmed as real.
+# Helps suppress false-positive tracks from noisy detections.
+min_hits: 3
+
+# IoU threshold for matching detections to existing tracks.
+# Lower = stricter spatial matching.
+iou_threshold: 0.3
+
+# Maximum cosine distance for appearance feature matching (ReID).
+# Lower = stricter appearance matching; helps re-ID instruments after occlusion.
+max_cosine_distance: 0.4
+
+# Maximum Mahalanobis distance for gating (statistical threshold).
+# Rejects implausible state-measurement associations.
+max_mahalanobis_distance: 9.4877
+
+# Number of frames of history to use for appearance feature averaging.
+nn_budget: 100
+
+# Whether to use appearance features (ReID) in addition to IoU matching.
+# Set to false for pure IoU tracking (faster but less robust).
+use_appearance: true
