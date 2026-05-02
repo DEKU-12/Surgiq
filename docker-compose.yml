@@ -1,0 +1,84 @@
+version: "3.9"
+
+# SurgIQ — Docker Compose
+# ========================
+# Starts three services:
+#   redis     — message broker for pipeline ↔ dashboard
+#   pipeline  — runs main.py on a video source
+#   dashboard — Streamlit UI at http://localhost:8501
+#
+# Usage:
+#   docker compose up --build
+#   docker compose up dashboard redis   # dashboard only
+#
+# Environment:
+#   Copy .env.example to .env and fill in GROQ_API_KEY before running.
+
+services:
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: surgiq-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Pipeline ───────────────────────────────────────────────────────────────
+  pipeline:
+    build: .
+    container_name: surgiq-pipeline
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./data:/app/data:ro          # raw + processed data (read-only)
+      - ./models:/app/models:ro      # trained weights (read-only)
+    command: >
+      python main.py
+        --source /app/data/raw/cholecseg8k/video01/video01_00080/frame_80_endo.png
+        --session-id demo
+        --max-frames 100
+    restart: "no"
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  dashboard:
+    build: .
+    container_name: surgiq-dashboard
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
+  # ── MLflow ─────────────────────────────────────────────────────────────────
+  mlflow:
+    image: python:3.11-slim
+    container_name: surgiq-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    command: >
+      bash -c "pip install mlflow -q &&
+               mlflow server
+                 --host 0.0.0.0
+                 --port 5000
+                 --backend-store-uri /mlruns"
+    restart: unless-stopped

@@ -1,0 +1,234 @@
+# SurgIQ — Real-Time AI Surgical Training Coach
+
+> A computer vision pipeline that watches laparoscopic surgery video in real time,
+> detects and tracks surgical instruments frame-by-frame, classifies operative
+> technique, and delivers LLM-generated coaching feedback to trainee surgeons.
+
+---
+
+## Results
+
+| Model | Metric | Value |
+|---|---|---|
+| YOLOv8n Instrument Detector | mAP@0.5 | **0.919** |
+| YOLOv8n — Grasper | AP@0.5 | **0.986** |
+| YOLOv8n — Hook | AP@0.5 | **0.851** |
+| EfficientNet-B0 Classifier | Val Accuracy | **94.7%** |
+| Full Pipeline Latency | Per-frame (MPS) | ~150ms |
+
+---
+
+## Architecture
+
+```
+Video / Webcam
+      │
+      ▼
+┌─────────────────┐
+│  VideoProcessor  │  ← frame extraction at 5 FPS
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ InstrumentDetect│  ← YOLOv8n  (mAP@0.5 = 0.919)
+│      or         │    Grasper · Hook
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ InstrumentTracke│  ← DeepSORT  (stable track IDs)
+│      r          │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ TechniqueClassif│  ← EfficientNet-B0  (94.7% acc)
+│     ier         │    no_instrument · grasper_only
+└────────┬────────┘    hook_only · both_instruments
+         │
+         ▼
+┌─────────────────┐
+│ FeedbackGenerato│  ← Groq / Llama-3.3-70B
+│       r         │    rate-limited coaching tips
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐        ┌──────────────────┐
+│  Redis Streams  │───────▶│ Streamlit Dashboa│
+│  (pub / sub)    │        │       rd         │
+└─────────────────┘        └──────────────────┘
+```
+
+---
+
+## Dataset
+
+**CholecSeg8k** — 17 laparoscopic cholecystectomy video clips with pixel-level
+segmentation masks.
+
+- **Raw**: 8,000+ annotated frames, 8 tissue/instrument classes
+- **Processed (YOLO)**: 5,619 train / 800 val / 1,280 test images
+- **Processed (Classifier)**: 6,121 train / 679 val / 1,288 frames
+
+Key pipeline decision: converted pixel-level segmentation masks to tight
+single bounding boxes per instrument class using NumPy argwhere — one bbox
+per class per frame rather than per connected component — which lifted
+mAP@0.5 from 0.05 → 0.919.
+
+---
+
+## Project Structure
+
+```
+SurgIQ/
+├── config.py                    # all paths, hyperparams, constants
+├── main.py                      # pipeline orchestrator (CLI)
+│
+├── pipeline/
+│   ├── video_processor.py       # frame extraction
+│   ├── instrument_detector.py   # YOLOv8n inference
+│   ├── instrument_tracker.py    # DeepSORT tracking
+│   ├── technique_classifier.py  # EfficientNet-B0 inference
+│   ├── feedback_generator.py    # Groq LLM coaching
+│   ├── redis_producer.py        # Redis Streams publisher
+│   └── redis_consumer.py        # Redis Streams consumer
+│
+├── training/
+│   ├── prepare_dataset.py       # CholecSeg8k → YOLO + classifier datasets
+│   ├── train_classifier.py      # EfficientNet-B0 fine-tuning (MPS/CUDA)
+│   ├── train_detector.py        # YOLOv8n fine-tuning (Colab/Kaggle)
+│   ├── evaluate.py              # mAP + confusion matrix + latency benchmark
+│   └── colab_training.ipynb     # Kaggle/Colab YOLO training notebook
+│
+├── dashboard/
+│   └── app.py                   # Streamlit real-time dashboard
+│
+├── mlops/
+│   └── mlflow_logger.py         # experiment tracking
+│
+├── tests/
+│   └── test_pipeline.py         # 25 unit tests (pytest)
+│
+├── .github/workflows/ci.yml     # GitHub Actions CI
+├── Dockerfile                   # production container
+└── docker-compose.yml           # full stack (pipeline + dashboard + redis + mlflow)
+```
+
+---
+
+## Quick Start
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/DEKU-12/Surgiq.git
+cd Surgiq
+pip install -r requirements.txt
+```
+
+### 2. Set up environment
+
+```bash
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY
+# Get a free key at https://console.groq.com
+```
+
+### 3. Download model weights
+
+Place trained weights in:
+```
+models/instrument_detector/best.pt      # YOLOv8n (from Kaggle training)
+models/technique_classifier/technique_cnn.pth   # EfficientNet-B0
+```
+
+### 4. Run the pipeline
+
+```bash
+# On a video file
+python main.py --source path/to/surgery.mp4
+
+# On a single frame (quick test)
+python main.py --source data/raw/cholecseg8k/video01/video01_00080/frame_80_endo.png --no-redis --max-frames 1
+
+# With live display window
+python main.py --source video.mp4 --display
+```
+
+### 5. Launch the dashboard
+
+```bash
+# Terminal 1 — Redis
+brew services start redis
+
+# Terminal 2 — Pipeline
+python main.py --source video.mp4 --session-id demo
+
+# Terminal 3 — Dashboard
+streamlit run dashboard/app.py
+# Open http://localhost:8501
+```
+
+### 6. Docker (full stack)
+
+```bash
+docker compose up --build
+# Dashboard → http://localhost:8501
+# MLflow   → http://localhost:5000
+```
+
+---
+
+## Training
+
+### Classifier (runs on Mac M4 / any GPU)
+
+```bash
+# 1. Prepare dataset
+python training/prepare_dataset.py
+
+# 2. Train EfficientNet-B0
+python training/train_classifier.py
+
+# 3. Evaluate
+python training/evaluate.py --split val
+```
+
+### Detector (Kaggle / Colab GPU recommended)
+
+Open `training/colab_training.ipynb` on Kaggle with a T4/P100 GPU.
+Training takes ~1 hour and saves `best.pt` to the output folder.
+
+---
+
+## Tests
+
+```bash
+pytest tests/ -v --cov=pipeline --cov=training
+# 25 tests, all passing
+```
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Instrument Detection | YOLOv8n (Ultralytics) |
+| Instrument Tracking | DeepSORT |
+| Activity Classification | EfficientNet-B0 (PyTorch) |
+| LLM Coaching | Groq API / Llama-3.3-70B |
+| Message Broker | Redis Streams |
+| Dashboard | Streamlit + Plotly |
+| Experiment Tracking | MLflow |
+| Containerisation | Docker + Docker Compose |
+| CI/CD | GitHub Actions |
+| Training Hardware | Apple M4 Pro (MPS) + Kaggle T4 GPU |
+
+---
+
+## Author
+
+**Ayush Sudhir Meshram**
+MS Data Science — George Washington University
+[GitHub](https://github.com/DEKU-12) · [LinkedIn](https://linkedin.com/in/ayush-meshram)
