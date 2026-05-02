@@ -1,0 +1,103 @@
+name: SurgIQ CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Lint + Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            torch==2.3.0 torchvision==0.18.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install \
+            ultralytics \
+            opencv-python-headless \
+            deep-sort-realtime \
+            redis \
+            mlflow \
+            groq \
+            streamlit \
+            plotly \
+            pandas \
+            numpy"<2.0" \
+            scikit-learn \
+            tqdm \
+            pytest \
+            pytest-cov \
+            python-dotenv \
+            Pillow \
+            pyyaml
+
+      - name: Syntax check — all Python files
+        run: |
+          find . -name "*.py" \
+            ! -path "./.git/*" \
+            ! -path "./data/*" \
+            ! -path "./models/*" \
+            -exec python -m py_compile {} \;
+          echo "All files syntax OK"
+
+      - name: Run unit tests
+        env:
+          GROQ_API_KEY: "test-key-ci"
+          PYTORCH_ENABLE_MPS_FALLBACK: "1"
+        run: |
+          pytest tests/ -v \
+            --tb=short \
+            --ignore=tests/test_integration.py \
+            --cov=pipeline \
+            --cov=training \
+            --cov-report=term-missing \
+            --cov-report=xml
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Run Ruff linter
+        run: |
+          ruff check . \
+            --exclude data,models,__pycache__ \
+            --select E,W,F \
+            --ignore E501,W503 \
+            --output-format=github
