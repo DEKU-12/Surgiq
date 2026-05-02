@@ -38,6 +38,7 @@ from pipeline.instrument_tracker   import InstrumentTracker
 from pipeline.technique_classifier import TechniqueClassifier
 from pipeline.feedback_generator   import FeedbackGenerator
 from pipeline.redis_producer       import RedisProducer
+from pipeline.voice_feedback       import VoiceFeedback
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +63,10 @@ def parse_args() -> argparse.Namespace:
         "--max-frames", type=int, default=0,
         help="Stop after N frames (0 = run until end)"
     )
+    parser.add_argument(
+        "--voice", action="store_true",
+        help="Speak coaching feedback aloud (macOS only)"
+    )
     return parser.parse_args()
 
 
@@ -84,6 +89,7 @@ def main() -> None:
     tracker    = InstrumentTracker()
     classifier = TechniqueClassifier()
     feedback   = FeedbackGenerator()
+    voice      = VoiceFeedback() if args.voice else None
     producer   = None if args.no_redis else RedisProducer(session_id=args.session_id)
 
     # ── Stats ─────────────────────────────────────────────────────────────────
@@ -116,7 +122,11 @@ def main() -> None:
                     frame_idx        = frame_idx,
                 )
 
-                # 5. Publish to Redis
+                # 5. Speak feedback aloud (if --voice enabled)
+                if voice and tip:
+                    voice.speak(tip)
+
+                # 6. Publish to Redis
                 if producer:
                     producer.publish(
                         frame_idx         = frame_idx,
@@ -125,7 +135,7 @@ def main() -> None:
                         feedback          = tip,
                     )
 
-                # 6. Console log
+                # 7. Console log
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 frame_times.append(elapsed_ms)
 
@@ -137,7 +147,7 @@ def main() -> None:
                 print(f"  Frame {frame_idx:>5} | {elapsed_ms:>5.1f}ms | "
                       f"{label:<20} | det: {det_str} | {track_str}{tip_str}")
 
-                # 7. Display (optional)
+                # 8. Display (optional)
                 if args.display:
                     annotated = detector.annotate(frame, detections)
                     cv2.putText(annotated, f"Label: {label}",
@@ -147,7 +157,7 @@ def main() -> None:
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
 
-                # 8. Max frames limit
+                # 9. Max frames limit
                 if args.max_frames and frame_idx >= args.max_frames:
                     print(f"\n  Reached --max-frames={args.max_frames}. Stopping.")
                     break
