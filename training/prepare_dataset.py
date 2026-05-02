@@ -121,9 +121,12 @@ def mask_to_bboxes(
     Read a CholecSeg8k grayscale mask and convert instrument pixels
     to YOLO bounding boxes.
 
+    Returns ONE bounding box per instrument class — the tight rectangle
+    that encloses ALL pixels of that class.  This avoids flooding the
+    model with dozens of tiny connected-component fragments per frame.
+
     Returns list of (class_idx, cx, cy, w, h) normalised to [0, 1].
-    Connected components smaller than min_area pixels are ignored
-    (removes noise / tiny artefacts).
+    Classes with fewer than min_area total pixels are skipped (noise).
     """
     mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
     if mask is None:
@@ -134,35 +137,32 @@ def mask_to_bboxes(
 
     for pixel_val, class_idx in MASK_TO_YOLO_CLASS.items():
         # Binary mask for this instrument
-        binary = (mask == pixel_val).astype(np.uint8)
-        if binary.sum() == 0:
+        binary = (mask == pixel_val)
+        total_pixels = binary.sum()
+        if total_pixels < min_area:
             continue
 
-        # Find connected components
-        num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary)
+        # Single tight bbox enclosing ALL pixels of this class
+        rows = np.any(binary, axis=1)
+        cols = np.any(binary, axis=0)
+        y_min, y_max = np.where(rows)[0][[0, -1]]
+        x_min, x_max = np.where(cols)[0][[0, -1]]
 
-        for label_idx in range(1, num_labels):  # skip background (0)
-            area = stats[label_idx, cv2.CC_STAT_AREA]
-            if area < min_area:
-                continue
+        bw = int(x_max - x_min + 1)
+        bh = int(y_max - y_min + 1)
 
-            x      = stats[label_idx, cv2.CC_STAT_LEFT]
-            y      = stats[label_idx, cv2.CC_STAT_TOP]
-            bw     = stats[label_idx, cv2.CC_STAT_WIDTH]
-            bh     = stats[label_idx, cv2.CC_STAT_HEIGHT]
+        cx_n = (x_min + bw / 2) / w
+        cy_n = (y_min + bh / 2) / h
+        bw_n = bw / w
+        bh_n = bh / h
 
-            cx_n = (x + bw / 2) / w
-            cy_n = (y + bh / 2) / h
-            bw_n = bw / w
-            bh_n = bh / h
+        # Clamp to [0, 1]
+        cx_n = max(0.0, min(1.0, cx_n))
+        cy_n = max(0.0, min(1.0, cy_n))
+        bw_n = max(0.001, min(1.0, bw_n))
+        bh_n = max(0.001, min(1.0, bh_n))
 
-            # Clamp to [0, 1]
-            cx_n = max(0.0, min(1.0, cx_n))
-            cy_n = max(0.0, min(1.0, cy_n))
-            bw_n = max(0.001, min(1.0, bw_n))
-            bh_n = max(0.001, min(1.0, bh_n))
-
-            annotations.append((class_idx, cx_n, cy_n, bw_n, bh_n))
+        annotations.append((class_idx, cx_n, cy_n, bw_n, bh_n))
 
     return annotations
 
