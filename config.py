@@ -115,7 +115,7 @@ DASHBOARD_REFRESH_S     = 0.5   # Streamlit polls Redis every 0.5 s
 
 # ── Groq LLM ──────────────────────────────────────────────────────────────────
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL      = "llama3-70b-8192"
+GROQ_MODEL      = "llama-3.3-70b-versatile"
 GROQ_MAX_TOKENS = 150
 
 # ── MLflow ────────────────────────────────────────────────────────────────────
