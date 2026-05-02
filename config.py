@@ -43,6 +43,9 @@ TEST_VIDEO_IDS  = list(range(71, 81))   # videos 71-80  (10 videos)
 VAL_VIDEO_IDS   = list(range(61, 71))   # videos 61-70  (10 videos)
 TRAIN_VIDEO_IDS = list(range(1,  61))   # videos 1-60   (60 videos)
 
+# ── YOLO Detector Classes (CholecSeg8k — 2 classes) ──────────────────────────
+YOLO_CLASS_NAMES = ["Grasper", "Hook"]
+
 # ── Instrument Classes ────────────────────────────────────────────────────────
 INSTRUMENT_CLASSES = [
     "Grasper",      # 0
