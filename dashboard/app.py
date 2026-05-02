@@ -26,6 +26,7 @@ from pathlib import Path
 from collections import deque, defaultdict
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -106,6 +107,10 @@ if "last_feedback" not in st.session_state:
     st.session_state.last_feedback = "Waiting for pipeline..."
 if "session_id"    not in st.session_state:
     st.session_state.session_id    = "demo"
+if "spoken_feedback" not in st.session_state:
+    st.session_state.spoken_feedback = ""
+if "voice_enabled" not in st.session_state:
+    st.session_state.voice_enabled = True
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -135,6 +140,12 @@ with st.sidebar:
     st.divider()
     st.markdown("**Pipeline status**")
     pipeline_placeholder = st.empty()
+
+    st.divider()
+    st.session_state.voice_enabled = st.toggle(
+        "🔊 Voice coaching", value=st.session_state.voice_enabled,
+        help="Speak coaching feedback aloud when it changes"
+    )
 
     st.divider()
     if st.button("🗑️ Reset session", use_container_width=True):
@@ -235,6 +246,44 @@ st.markdown(
     f'<div class="feedback-box">{st.session_state.last_feedback}</div>',
     unsafe_allow_html=True,
 )
+
+# ── Voice Feedback (browser Web Speech API) ───────────────────────────────────
+
+current_feedback = st.session_state.last_feedback
+should_speak = (
+    st.session_state.voice_enabled
+    and current_feedback != st.session_state.spoken_feedback
+    and current_feedback != "Waiting for pipeline..."
+)
+
+if should_speak:
+    st.session_state.spoken_feedback = current_feedback
+    # Take first 2 sentences to keep it short
+    sentences = current_feedback.replace("  ", " ").split(". ")
+    short_text = ". ".join(sentences[:2])
+    if not short_text.endswith("."):
+        short_text += "."
+    # Escape for JS string
+    safe_text = short_text.replace("'", "\\'").replace("\n", " ")
+
+    components.html(f"""
+        <script>
+            window.speechSynthesis.cancel();
+            var msg = new SpeechSynthesisUtterance('{safe_text}');
+            msg.rate  = 0.95;
+            msg.pitch = 1.0;
+            msg.volume = 1.0;
+            // Use a clear voice if available
+            var voices = window.speechSynthesis.getVoices();
+            var preferred = voices.find(v =>
+                v.name.includes('Samantha') ||
+                v.name.includes('Google US') ||
+                v.name.includes('Karen')
+            );
+            if (preferred) msg.voice = preferred;
+            window.speechSynthesis.speak(msg);
+        </script>
+    """, height=0)
 
 
 # ── Charts ────────────────────────────────────────────────────────────────────
