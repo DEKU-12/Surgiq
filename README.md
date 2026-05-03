@@ -13,8 +13,11 @@
 | YOLOv8n Instrument Detector | mAP@0.5 | **0.919** |
 | YOLOv8n — Grasper | AP@0.5 | **0.986** |
 | YOLOv8n — Hook | AP@0.5 | **0.851** |
-| EfficientNet-B0 Classifier | Val Accuracy | **94.7%** |
-| Full Pipeline Latency | Per-frame (MPS) | ~150ms |
+| EfficientNet-B0 Classifier | Test Accuracy | **85.6%** |
+| EfficientNet-B0 Classifier | Val Accuracy | **83.6%** |
+| Full Pipeline Latency | Per-frame | ~16ms (63 FPS) |
+
+> **Honest evaluation note:** The classifier was evaluated on 4,837 frames from 3 videos (video48, video52, video55) that were never seen during training — a true video-level held-out test set. Early experiments with only 17 videos yielded 94.7% val accuracy but just 38% test accuracy due to domain shift. Scaling to 80 Cholec80 videos with a proper video-level split resolved this.
 
 ---
 
@@ -63,17 +66,18 @@ Video / Webcam
 
 ## Dataset
 
-**CholecSeg8k** — 17 laparoscopic cholecystectomy video clips with pixel-level
-segmentation masks.
+**Two datasets used:**
 
-- **Raw**: 8,000+ annotated frames, 8 tissue/instrument classes
+**CholecSeg8k** — 17 laparoscopic cholecystectomy video clips with pixel-level segmentation masks. Used for YOLO detector training.
+
 - **Processed (YOLO)**: 5,619 train / 800 val / 1,280 test images
-- **Processed (Classifier)**: 6,121 train / 679 val / 1,288 frames
+- Key decision: converted pixel-level masks to tight single bounding boxes per instrument class using NumPy argwhere — lifted mAP@0.5 from 0.05 → 0.919
 
-Key pipeline decision: converted pixel-level segmentation masks to tight
-single bounding boxes per instrument class using NumPy argwhere — one bbox
-per class per frame rather than per connected component — which lifted
-mAP@0.5 from 0.05 → 0.919.
+**Cholec80** — 80 laparoscopic cholecystectomy videos with tool presence annotations at 1 FPS. Used for classifier training.
+
+- **Processed (Classifier)**: 158,099 train / 21,562 val / 4,837 test frames
+- **Video-level split**: Test={video48, video52, video55}, Val={video71–80}, Train=67 videos
+- 4 classes derived from Grasper + Hook presence: `no_instrument`, `grasper_only`, `hook_only`, `both_instruments`
 
 ---
 
@@ -184,14 +188,14 @@ docker compose up --build
 ### Classifier (runs on Mac M4 / any GPU)
 
 ```bash
-# 1. Prepare dataset
-python training/prepare_dataset.py
+# 1. Prepare Cholec80 dataset (requires Cholec80 downloaded locally)
+python training/prepare_cholec80.py --cholec80-dir ~/Downloads/cholec80
 
 # 2. Train EfficientNet-B0
-python training/train_classifier.py
+python training/train_classifier.py --epochs 30
 
-# 3. Evaluate
-python training/evaluate.py --split val
+# 3. Evaluate on test set
+python training/evaluate.py --split test
 ```
 
 ### Detector (Kaggle / Colab GPU recommended)
@@ -223,7 +227,7 @@ pytest tests/ -v --cov=pipeline --cov=training
 | Experiment Tracking | MLflow |
 | Containerisation | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
-| Training Hardware | Apple M4 Pro (MPS) + Kaggle T4 GPU |
+| Training Hardware | Apple M4 Pro (MPS) + Kaggle T4 GPU + AWS g5.xlarge (A10G) |
 
 ---
 
