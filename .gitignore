@@ -1,5 +1,11 @@
 data/raw/
 data/frames/
+data/processed/
+*.zip
+*.mp4
+*.avi
+dump.rdb
+runs/
 models/*.pt
 models/*.pth
 models/**/*.pt
