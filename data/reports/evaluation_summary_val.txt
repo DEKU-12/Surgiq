@@ -1,0 +1,21 @@
+SurgIQ — Evaluation Summary (VAL SET)
+============================================================
+
+INSTRUMENT DETECTOR (YOLOv8n)
+  mAP@0.5      : 0.8794
+  mAP@0.5:0.95 : 0.5401
+  Precision    : 0.9411
+  Recall       : 0.9068
+
+  Per-class AP@0.5:
+    Grasper       : 0.9767
+    Bipolar       : 0.7821
+
+TECHNIQUE CLASSIFIER (EfficientNet-B0)
+  Accuracy     : 0.9470
+
+LATENCY
+  Detector avg  : 9.3ms
+  Classifier avg: 7.5ms
+  Combined avg  : 16.8ms
+  Combined p95  : 16.1ms

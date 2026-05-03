@@ -72,11 +72,9 @@ YOLO_CLASS_NAMES = ["Grasper", "Hook"]
 
 # Video-level held-out test set — NEVER used during training
 TEST_VIDEOS  = {"video48", "video52", "video55"}
-# All other videos use frame-level 80/10/10 split for train/val
-# This ensures instrument frames appear in all splits
+VAL_VIDEOS   = set()   # no dedicated val videos — stratified frame-level split used instead
 FRAME_TRAIN_RATIO = 0.80
 FRAME_VAL_RATIO   = 0.10
-# Remaining 0.10 goes to val within non-test videos (no val from test videos)
 
 # Classifier label names
 CLASSIFIER_LABELS = [
@@ -95,10 +93,12 @@ def make_dirs(*paths: Path) -> None:
 
 
 def split_for_video(video_name: str) -> str:
-    """Returns 'test' for held-out videos, else 'train' (frame-level split handles val)."""
+    """Returns the dataset split for a given video name."""
     if video_name in TEST_VIDEOS:
         return "test"
-    return "train_val"  # will be split at frame level
+    if video_name in VAL_VIDEOS:
+        return "val"
+    return "train"
 
 
 def frame_split(frame_idx: int, total_frames: int) -> str:
@@ -227,14 +227,11 @@ def build_yolo_dataset(min_area: int = 150) -> None:
 
                 annotations = mask_to_bboxes(mask_path, min_area=min_area)
 
-                # Determine split
-                if video_split == "test":
-                    split = "test"
+                # Determine split — video-level for val/test, frame-level for train
+                if video_split in ("test", "val"):
+                    split = video_split
                 else:
-                    # Frame-level split within non-test videos
-                    global_idx = fd_idx * 1000 + img_idx
-                    global_total = total_frame_dirs * 1000
-                    split = frame_split(global_idx, global_total)
+                    split = "train"
 
                 # Skip frames with no instruments for train/val
                 if split != "test" and not annotations:
@@ -295,6 +292,9 @@ def build_classifier_dataset(min_area: int = 150) -> None:
     import random
     from collections import defaultdict
 
+    import random
+    from collections import defaultdict
+
     print("\n[2/2] Building classifier dataset from CholecSeg8k (stratified split)...")
 
     if not CHOLECSEG8K_DIR.exists():
@@ -308,8 +308,8 @@ def build_classifier_dataset(min_area: int = 150) -> None:
     stats = {"train": 0, "val": 0, "test": 0}
 
     # ── Pass 1: collect all frames with their labels ──────────────────────────
-    test_frames    = []   # (img_path, label, unique_name) — go straight to test
-    trainval_frames = defaultdict(list)  # label → [(img_path, unique_name)]
+    test_frames     = []
+    trainval_frames = defaultdict(list)   # label → [(img_path, unique_name)]
 
     video_dirs = sorted([d for d in CHOLECSEG8K_DIR.iterdir() if d.is_dir()])
 
@@ -334,14 +334,15 @@ def build_classifier_dataset(min_area: int = 150) -> None:
                 else:
                     trainval_frames[label].append((img_path, unique_name))
 
-    # ── Pass 2: stratified 80/20 split on non-test frames ────────────────────
+    # ── Pass 2: stratified 10% val split per class ────────────────────────────
+    import random
     random.seed(42)
     train_frames = []
     val_frames   = []
 
     for label, items in trainval_frames.items():
         random.shuffle(items)
-        val_size = max(1, int(len(items) * FRAME_VAL_RATIO))  # at least 1 per class
+        val_size = max(1, int(len(items) * FRAME_VAL_RATIO))
         val_frames.extend([(img_path, label, name) for img_path, name in items[:val_size]])
         train_frames.extend([(img_path, label, name) for img_path, name in items[val_size:]])
 
@@ -424,7 +425,8 @@ def main() -> None:
     print(f"  Source      : {CHOLECSEG8K_DIR}")
     print(f"  Min bbox area: {args.min_area} px")
     print(f"  Test videos : {sorted(TEST_VIDEOS)}  ← HELD OUT")
-    print(f"  Split       : frame-level 80/10/10 train/val/test")
+    print(f"  Val videos  : {sorted(VAL_VIDEOS)}")
+    print(f"  Split       : video-level (train=11 videos, val=3, test=3)")
     print("=" * 68)
 
     if not args.skip_yolo:

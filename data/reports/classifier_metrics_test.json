@@ -1,0 +1,75 @@
+{
+  "split": "test",
+  "accuracy": 0.8556956791399628,
+  "classification_report": {
+    "both_instruments": {
+      "precision": 0.9341432225063938,
+      "recall": 0.8445086705202313,
+      "f1-score": 0.8870673952641166,
+      "support": 1730.0
+    },
+    "grasper_only": {
+      "precision": 0.8593017196456487,
+      "recall": 0.9212290502793297,
+      "f1-score": 0.8891884605014829,
+      "support": 1790.0
+    },
+    "hook_only": {
+      "precision": 0.7365853658536585,
+      "recall": 0.8908554572271387,
+      "f1-score": 0.8064085447263017,
+      "support": 678.0
+    },
+    "no_instrument": {
+      "precision": 0.795880149812734,
+      "recall": 0.6651017214397497,
+      "f1-score": 0.7246376811594203,
+      "support": 639.0
+    },
+    "accuracy": 0.8556956791399628,
+    "macro avg": {
+      "precision": 0.8314776144546088,
+      "recall": 0.8304237248666123,
+      "f1-score": 0.8268255204128304,
+      "support": 4837.0
+    },
+    "weighted avg": {
+      "precision": 0.8604900034899504,
+      "recall": 0.8556956791399628,
+      "f1-score": 0.8550883625573451,
+      "support": 4837.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      1461,
+      66,
+      203,
+      0
+    ],
+    [
+      31,
+      1649,
+      4,
+      106
+    ],
+    [
+      70,
+      1,
+      604,
+      3
+    ],
+    [
+      2,
+      203,
+      9,
+      425
+    ]
+  ],
+  "class_names": [
+    "both_instruments",
+    "grasper_only",
+    "hook_only",
+    "no_instrument"
+  ]
+}

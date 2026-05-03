@@ -1,0 +1,12 @@
+SurgIQ — Evaluation Summary (TEST SET)
+============================================================
+
+
+TECHNIQUE CLASSIFIER (EfficientNet-B0)
+  Accuracy     : 0.8557
+
+LATENCY
+  Detector avg  : 10.8ms
+  Classifier avg: 7.8ms
+  Combined avg  : 18.6ms
+  Combined p95  : 16.4ms

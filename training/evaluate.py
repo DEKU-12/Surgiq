@@ -157,13 +157,34 @@ def evaluate_classifier(split: str) -> dict:
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
+    # Skip empty class directories — some test videos may lack certain classes
+    empty_classes = [
+        d.name for d in split_dir.iterdir()
+        if d.is_dir() and not any(d.iterdir())
+    ]
+    if empty_classes:
+        print(f"\n  WARNING: Skipping empty class dirs in {split}: {empty_classes}")
+        print("  This is expected if test videos don't cover all instrument combinations.")
+        # Temporarily remove empty dirs from ImageFolder by filtering
+        import shutil, tempfile
+        tmp_dir = Path(tempfile.mkdtemp())
+        for cls_dir in split_dir.iterdir():
+            if cls_dir.is_dir() and any(cls_dir.iterdir()):
+                (tmp_dir / cls_dir.name).symlink_to(cls_dir.resolve())
+        split_dir = tmp_dir
+
     dataset = datasets.ImageFolder(str(split_dir), transform=val_transform)
     loader  = DataLoader(
         dataset, batch_size=64, shuffle=False,
         num_workers=0 if device.type == "mps" else 4,
     )
 
-    model, class_names = load_classifier(cfg.CLASSIFIER_WEIGHTS, len(dataset.classes), device)
+    # Always load num_classes from checkpoint — dataset may have fewer classes (e.g. empty test dirs)
+    ckpt        = torch.load(cfg.CLASSIFIER_WEIGHTS, map_location=device)
+    num_classes = len(ckpt.get("classes", ["no_instrument", "grasper_only", "hook_only", "both_instruments"]))
+    model, class_names = load_classifier(cfg.CLASSIFIER_WEIGHTS, num_classes, device)
+    # Remap dataset class indices to match the full model class list
+    dataset_to_model = [class_names.index(c) for c in dataset.classes]
 
     all_preds  = []
     all_labels = []
@@ -172,21 +193,28 @@ def evaluate_classifier(split: str) -> dict:
         for images, labels in tqdm(loader, desc="  evaluating"):
             outputs = model(images.to(device))
             preds   = outputs.argmax(dim=1).cpu().numpy()
+            # Remap dataset label indices → model label indices
+            remapped_labels = [dataset_to_model[l] for l in labels.numpy()]
             all_preds.extend(preds)
-            all_labels.extend(labels.numpy())
+            all_labels.extend(remapped_labels)
 
     all_preds  = np.array(all_preds)
     all_labels = np.array(all_labels)
 
+    # Only report on classes actually present in this split
+    present_indices = sorted(set(all_labels))
+    present_names   = [class_names[i] for i in present_indices]
+
     acc    = accuracy_score(all_labels, all_preds)
     report = classification_report(
         all_labels, all_preds,
-        target_names=class_names,
+        labels=present_indices,
+        target_names=present_names,
         output_dict=True,
     )
 
     print(f"\n  Accuracy : {acc:.4f}")
-    print(f"\n  {classification_report(all_labels, all_preds, target_names=class_names)}")
+    print(f"\n  {classification_report(all_labels, all_preds, labels=present_indices, target_names=present_names)}")
 
     # ── Confusion Matrix ──────────────────────────────────────────────────────
     cm = confusion_matrix(all_labels, all_preds)
@@ -253,7 +281,10 @@ def benchmark_latency(n_frames: int = 100) -> dict:
 
     # ── Classifier latency ────────────────────────────────────────────────────
     if cfg.CLASSIFIER_WEIGHTS.exists():
-        model, _ = load_classifier(cfg.CLASSIFIER_WEIGHTS, cfg.NUM_PHASES, device)
+        # Read num_classes from checkpoint to avoid hardcoded mismatch
+        checkpoint  = torch.load(cfg.CLASSIFIER_WEIGHTS, map_location=device)
+        num_classes = len(checkpoint.get("classes", ["no_instrument", "grasper_only", "hook_only", "both_instruments"]))
+        model, _ = load_classifier(cfg.CLASSIFIER_WEIGHTS, num_classes, device)
         dummy_tensor = torch.rand(1, 3, cfg.CLASSIFIER_IMG_SIZE, cfg.CLASSIFIER_IMG_SIZE).to(device)
 
         print(f"  Running {n_frames} classifier inference passes...")

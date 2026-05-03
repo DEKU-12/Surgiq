@@ -51,10 +51,17 @@ def get_transforms(split: str) -> transforms.Compose:
 
     if split == "train":
         return transforms.Compose([
-            transforms.RandomResizedCrop(cfg.CLASSIFIER_IMG_SIZE, scale=(0.7, 1.0)),
+            transforms.RandomResizedCrop(cfg.CLASSIFIER_IMG_SIZE, scale=(0.6, 1.0)),
             transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
-            transforms.RandomRotation(15),
+            transforms.RandomVerticalFlip(p=0.2),
+            # Stronger colour jitter — surgical lighting varies across hospitals/cameras
+            transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.4, hue=0.1),
+            transforms.RandomRotation(20),
+            # Blur simulates camera focus changes during laparoscopy
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))], p=0.3),
+            # Occasional grayscale — some surgical cams have reduced colour
+            transforms.RandomGrayscale(p=0.05),
+            transforms.RandomPerspective(distortion_scale=0.2, p=0.3),
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ])
@@ -200,7 +207,7 @@ def main() -> None:
     empty_val_classes = []
     for cls in train_dataset.classes:
         cls_val_dir = val_dir / cls
-        if not cls_val_dir.exists() or not any(cls_val_dir.glob("*.png")):
+        if not cls_val_dir.exists() or not any(cls_val_dir.glob("*.png")) and not any(cls_val_dir.glob("*.jpg")):
             empty_val_classes.append(cls)
 
     if empty_val_classes:
@@ -232,7 +239,20 @@ def main() -> None:
     # ── Model, Loss, Optimiser ────────────────────────────────────────────────
     model     = build_model(num_classes=len(train_dataset.classes), dropout=args.dropout)
     model     = model.to(device)
-    criterion = nn.CrossEntropyLoss()
+
+    # Class-weighted loss — inverse frequency so rare classes get more gradient
+    class_counts = torch.tensor(
+        [len(list((cfg.CLASSIFIER_DATASET_DIR / "train" / c).glob("*.jpg"))) +
+         len(list((cfg.CLASSIFIER_DATASET_DIR / "train" / c).glob("*.png")))
+         for c in train_dataset.classes],
+        dtype=torch.float,
+    )
+    class_weights = (1.0 / class_counts)
+    class_weights = class_weights / class_weights.sum() * len(train_dataset.classes)
+    class_weights = class_weights.to(device)
+    print(f"\n  Class weights: { {c: f'{w:.3f}' for c, w in zip(train_dataset.classes, class_weights.tolist())} }")
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, weight_decay=1e-4,
