@@ -22,6 +22,7 @@ Usage:
 import argparse
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -91,6 +92,8 @@ def main() -> None:
     feedback   = FeedbackGenerator()
     voice      = VoiceFeedback() if args.voice else None
     producer   = None if args.no_redis else RedisProducer(session_id=args.session_id)
+    llm_pool   = ThreadPoolExecutor(max_workers=1)   # one LLM call at a time, off the frame loop
+    pending    = None
 
     # ── Stats ─────────────────────────────────────────────────────────────────
     frame_times  = []
@@ -115,12 +118,18 @@ def main() -> None:
                 label      = clf_result["label"]
                 label_counts[label] = label_counts.get(label, 0) + 1
 
-                # 4. Generate LLM feedback (rate-limited)
-                tip = feedback.generate(
-                    classifier_label = label,
-                    tracks           = tracks,
-                    frame_idx        = frame_idx,
-                )
+                # 4. Generate LLM feedback (rate-limited) in the background so a
+                #    slow API call never stalls frames; the tip lands on a later frame.
+                tip = None
+                if pending and pending.done():
+                    tip, pending = pending.result(), None
+                if pending is None:
+                    pending = llm_pool.submit(
+                        feedback.generate,
+                        classifier_label = label,
+                        tracks           = tracks,
+                        frame_idx        = frame_idx,
+                    )
 
                 # 5. Speak feedback aloud (if --voice enabled)
                 if voice and tip:
@@ -165,6 +174,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\n  Interrupted by user.")
     finally:
+        llm_pool.shutdown(wait=False, cancel_futures=True)
         if args.display:
             cv2.destroyAllWindows()
         if producer:
