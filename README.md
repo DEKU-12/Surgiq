@@ -8,9 +8,13 @@ SurgIQ is a computer-vision pipeline that watches laparoscopic cholecystectomy (
 
 ## Demo video
 
-[![SurgIQ demo](assets/poster.jpg)](assets/surgiq-demo.mp4)
 
-**[▶ surgiq-demo.mp4](assets/surgiq-demo.mp4)**: 40 seconds, all real. It shows `main.py` running on a laparoscopic clip, live YOLOv8n boxes with the activity label on each frame, results streaming to the dashboard, a fresh coaching tip from the LLM read aloud, and the session summary.
+
+https://github.com/user-attachments/assets/fbbedfa5-e362-4ca0-9f71-b132803c14d5
+
+
+
+**: 40 seconds, all real. It shows `main.py` running on a laparoscopic clip, live YOLOv8n boxes with the activity label on each frame, results streaming to the dashboard, a fresh coaching tip from the LLM read aloud, and the session summary.
 
 ## Try it
 
